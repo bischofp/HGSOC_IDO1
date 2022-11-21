@@ -1,0 +1,156 @@
+---
+title: "TCGA OV - IDO1 - GSEA"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+
+library(tidyverse)
+library(clusterProfiler)  # package for GSEA
+library(msigdbr)  # gene signature database
+library(cowplot)
+
+theme_set(theme_cowplot())
+
+```
+
+```{r, include=FALSE}
+
+# load gene expression matrix (downloaded from cBioportal)
+gex_matrix <- read_tsv("data/data_mrna_seq_v2_rsem.txt") %>% as.data.frame()
+
+# remove empty and duplicated rows
+gex_matrix <- na.omit(gex_matrix)
+gex_matrix <- gex_matrix[!duplicated(gex_matrix$Hugo_Symbol),]
+gex_matrix <- gex_matrix[!duplicated(gex_matrix$Entrez_Gene_Id),]
+
+# get HGNC symbols and Entrez IDs
+hgnc_genes <- gex_matrix$Hugo_Symbol
+entrez_genes <- as.character(gex_matrix$Entrez_Gene_Id)
+
+# transform to matrix and label rownames with Entrez IDs
+gex_matrix <- as.matrix(gex_matrix[,3:ncol(gex_matrix)]) %>% t()
+entrez_matrix <- gex_matrix
+colnames(entrez_matrix) <- entrez_genes
+
+```
+
+```{r, include=FALSE}
+
+# make list of genes positively correlated with IDO1 using Entrez ID matrix
+entrez_corr <- cor(entrez_matrix, method = "spearman")
+entrez_gene_list <- sort(entrez_corr[,"3620"], decreasing = TRUE)
+
+```
+
+```{r, include=FALSE}
+
+# define Hallmark gene sets and run GSEA
+
+hallmark <- msigdbr(species = "Homo sapiens", category = "H") %>% 
+  dplyr::select(gs_name, entrez_gene)
+gsea_hallmark <- GSEA(geneList = entrez_gene_list,
+                      TERM2GENE = hallmark)
+gsea_hallmark_df <- as.data.frame(gsea_hallmark)
+
+# define KEGG gene sets and run GSEA
+
+kegg <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP:KEGG") %>% 
+  dplyr::select(gs_name, entrez_gene)
+gsea_kegg <- GSEA(geneList = entrez_gene_list,
+                  TERM2GENE = kegg)
+gsea_kegg_df <- as.data.frame(gsea_kegg)
+
+```
+
+# Hallmark Signatures
+
+```{r, echo=FALSE, fig.height=8, fig.width=6}
+
+# prepare dataframe for plotting
+gsea_hallmark_df$Description <- gsub(gsea_hallmark_df$Description, pattern = "HALLMARK_", replacement = "")
+gsea_hallmark_df$Description <- gsub(gsea_hallmark_df$Description, pattern = "_", replacement = " ")
+gsea_hallmark_df$Description <- tolower(gsea_hallmark_df$Description)
+gsea_hallmark_df$color_code <- ifelse(gsea_hallmark_df$enrichmentScore > 0, "high", "low")
+
+# barplot of significant enrichment scores (padj < 0.05)
+ggplot(gsea_hallmark_df) +
+  geom_bar(aes(y = enrichmentScore, x = reorder(Description, enrichmentScore), fill = color_code), 
+           width = 0.7,
+           stat = "identity") + 
+  xlab("Gene sets") +
+  ylab("Enrichment Score") +
+  scale_fill_discrete(type = c("brown2", "skyblue3"), guide = "none") +
+  coord_flip()
+#ggsave("output/barplot_hallmark.pdf", height = 8, width = 6)
+
+```
+
+```{r, echo=FALSE}
+
+#GSEA plot for IFN alpha response
+gseaplot(gsea_hallmark, 
+         geneSetID = 7, 
+         title = gsea_hallmark$Description[7], 
+         color.line = "green3",
+         color.vline = "brown2")
+#ggsave("output/GSEA_hallmark_IFNalpha.pdf", height = 5, width = 7)
+
+#GSEA plot for IFN gamma response
+gseaplot(gsea_hallmark, 
+         geneSetID = 8, 
+         title = gsea_hallmark$Description[8],
+         color.line = "green3",
+         color.vline = "brown2")
+#ggsave("output/GSEA_hallmark_IFNgamma.pdf", height = 5, width = 7)
+
+#GSEA plot for TGF beta signaling
+gseaplot(gsea_hallmark, 
+         geneSetID = 35, 
+         title = gsea_hallmark$Description[35],
+         color.line = "green3",
+         color.vline = "brown2")
+#ggsave("output/GSEA_hallmark_TGFbeta.pdf", height = 5, width = 7)
+
+```
+
+# KEGG Signatures
+
+```{r, echo=FALSE, fig.height=12, fig.width=12}
+
+# prepare dataframe for plotting
+gsea_kegg_df$Description <- gsub(gsea_kegg_df$Description, pattern = "KEGG_", replacement = "")
+gsea_kegg_df$Description <- gsub(gsea_kegg_df$Description, pattern = "_", replacement = " ")
+gsea_kegg_df$Description <- tolower(gsea_kegg_df$Description)
+gsea_kegg_df$color_code <- ifelse(gsea_kegg_df$enrichmentScore > 0, "high", "low")
+
+# barplot of significant enrichment scores (padj < 0.05)
+ggplot(gsea_kegg_df) +
+  geom_bar(aes(y = enrichmentScore, x = reorder(Description, enrichmentScore), fill = color_code), 
+           width = 0.7,
+           stat = "identity") + 
+  xlab("Gene sets") +
+  ylab("Enrichment Score") +
+  scale_fill_discrete(type = c("brown2", "skyblue3"), guide = "none") +
+  coord_flip()
+#ggsave("output/barplot_kegg.pdf", height = 8, width = 6)
+
+```
+
+```{r, echo=FALSE}
+
+#GSEA plot for antigen processing and presentation
+gseaplot(gsea_kegg, geneSetID = 2, 
+         title = gsea_kegg$Description[2],
+         color.line = "green3",
+         color.vline = "brown2")
+#ggsave("output/GSEA_kegg_antigen.pdf", height = 5, width = 7)
+
+#GSEA plot for TGF beta signaling
+gseaplot(gsea_kegg, geneSetID = 39, 
+         title = gsea_kegg$Description[39],
+         color.line = "green3",
+         color.vline = "brown2")
+#ggsave("output/GSEA_kegg_TGFbeta.pdf", height = 5, width = 7)
+
+```

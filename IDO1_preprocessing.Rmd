@@ -1,0 +1,252 @@
+---
+title: "IDO1 preprocessing"
+output: html_notebook
+---
+
+```{r setup}
+
+library(Seurat)
+library(tidyverse)
+library(viridisLite)
+library(readxl)
+library(ggplot2)
+library(cowplot)
+
+theme_set(theme_cowplot())
+
+#colors to use for cell types
+use_colors <- c(
+  `Epithelial cells` = "brown2",
+  `Ovarian stroma cells` = "#bcbddc",
+  `Myeloid cells` = "darkgoldenrod2",
+  `T/NK cells` = "#7A0177",
+  `B cells` = "#006837",
+  `B/Plasma cells` = "#006837",
+  Fibroblasts = "#08519C",
+  `Smooth muscle cells` = "#6bAEd6",
+  `Mesothelial cells` = "#78c679",
+  `Endothelial cells` = "#EB96EB",
+  `Plasma cells` = "chocolate4",
+  Undefined = "grey")
+
+#wrapper function for cell cycle assignment
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+
+score_cc <- function(seu_obj) {
+  seu_obj <- CellCycleScoring(seu_obj, s.genes, g2m.genes)
+  seu_obj@meta.data$CC.Diff <- seu_obj@meta.data$S.Score - seu_obj@meta.data$G2M.Score
+  return(seu_obj)
+}
+
+```
+
+```{r choose dataset}
+
+#dataset <- "olbrecht"
+
+# or
+
+dataset <- "olalekan"
+
+```
+
+```{r load olbrecht data}
+
+if (dataset == "olbrecht") {
+
+# load gene expression data from Olbrecht et al.
+olbrecht_data <- readRDS("data/Olbrecht et al (Lambrecht)/2095-Olbrecht_counts_matrix.rds")
+ovca_obj <- CreateSeuratObject(olbrecht_data, min.cells = 3)
+
+
+# load metadata from Olbrecht et al.
+olbrecht_metadata <- read.csv("data/Olbrecht et al (Lambrecht)/2093-Olbrecht_metadata.csv")
+sample_id <- FetchData(ovca_obj, "ident")
+sample_id$cell_id <- rownames(sample_id)
+sample_id$sample_name <- substring(rownames(sample_id), first = 18)
+metadata <- left_join(x = sample_id, y = olbrecht_metadata, by = "sample_name")
+rownames(metadata) <- metadata$cell_id
+
+# add metadata
+ovca_obj <- AddMetaData(ovca_obj, metadata = metadata)
+ovca_obj$sample_id <- ovca_obj$sample_name
+
+# clear environment
+rm(list = c("olbrecht_data", "metadata", "olbrecht_metadata", "sample_id"))
+gc()
+
+
+
+} else if (dataset == "olalekan") {
+
+olalekan_data_2834 <- read_csv("data/Olalekan et al (Basu)/PT-2834.csv") %>% as.matrix()
+rownames(olalekan_data_2834) <- olalekan_data_2834[,1]
+olalekan_data_2834 <- olalekan_data_2834[,2:ncol(olalekan_data_2834)]
+olalekan_2834 <- CreateSeuratObject(olalekan_data_2834, project = "2834")
+
+olalekan_data_3232 <- read_csv("data/Olalekan et al (Basu)/PT-3232.csv") %>% as.matrix()
+rownames(olalekan_data_3232) <- olalekan_data_3232[,1]
+olalekan_data_3232 <- olalekan_data_3232[,2:ncol(olalekan_data_3232)]
+olalekan_3232 <- CreateSeuratObject(olalekan_data_3232, project = "3232")
+
+olalekan_data_3401 <- read_csv("data/Olalekan et al (Basu)/PT-3401.csv") %>% as.matrix()
+rownames(olalekan_data_3401) <- olalekan_data_3401[,1]
+olalekan_data_3401 <- olalekan_data_3401[,2:ncol(olalekan_data_3401)]
+olalekan_3401 <- CreateSeuratObject(olalekan_data_3401, project = "3401")
+
+olalekan_data_4806 <- read_csv("data/Olalekan et al (Basu)/PT-4806.csv") %>% as.matrix()
+rownames(olalekan_data_4806) <- olalekan_data_4806[,1]
+olalekan_data_4806 <- olalekan_data_4806[,2:ncol(olalekan_data_4806)]
+olalekan_4806 <- CreateSeuratObject(olalekan_data_4806, project = "4806")
+
+olalekan_data_5150 <- read_csv("data/Olalekan et al (Basu)/PT-5150.csv") %>% as.matrix()
+rownames(olalekan_data_5150) <- olalekan_data_5150[,1]
+olalekan_data_5150 <- olalekan_data_5150[,2:ncol(olalekan_data_5150)]
+olalekan_5150 <- CreateSeuratObject(olalekan_data_5150, project = "5150")
+
+olalekan_data_6885 <- read_csv("data/Olalekan et al (Basu)/PT-6885.csv") %>% as.matrix()
+rownames(olalekan_data_6885) <- olalekan_data_6885[,1]
+olalekan_data_6885 <- olalekan_data_6885[,2:ncol(olalekan_data_6885)]
+olalekan_6885 <- CreateSeuratObject(olalekan_data_6885, project = "6885")
+
+# merge seurat objects
+ovca_obj <- merge(olalekan_2834, c(olalekan_3232, olalekan_3401, olalekan_4806, olalekan_5150, olalekan_6885))
+ovca_obj$sample_id <- ovca_obj$orig.ident
+
+# clear environment
+rm(list = c("olalekan_data_2834",
+            "olalekan_2834",
+            "olalekan_data_3232",
+            "olalekan_3232",
+            "olalekan_data_3401",
+            "olalekan_3401",
+            "olalekan_data_4806",
+            "olalekan_4806",
+            "olalekan_data_5150",
+            "olalekan_5150",
+            "olalekan_data_6885",
+            "olalekan_6885"))
+gc()
+
+} else{print("Wrong dataset.")}
+
+```
+
+```{r quality control}
+
+# calculate QC metrics
+ovca_obj <- PercentageFeatureSet(ovca_obj, pattern = "^MT-", col.name = "pMT")
+ovca_obj <- PercentageFeatureSet(ovca_obj, pattern = "^HBA|^HBB", col.name = "pHB")
+ovca_obj <- PercentageFeatureSet(ovca_obj, pattern = "^RPS|^RPL", col.name = "pRP")
+
+# plot QC metrics
+qcparams <- c("nFeature_RNA", "nCount_RNA", "pMT", "pHB", "pRP")
+for (i in seq_along(qcparams)){
+  print(VlnPlot(object = ovca_obj, features = qcparams[i], group.by = "sample_id", pt.size = 0))
+}
+for (i in seq_along(qcparams)){
+  print(RidgePlot(object = ovca_obj, features = qcparams[i], group.by = "sample_id"))
+}
+
+```
+
+```{r filtering}
+
+# filter seurat object
+ovca_obj <- subset(ovca_obj, subset = 
+                     nFeature_RNA > 500 & 
+                     nFeature_RNA < 6000 &
+                     nCount_RNA > 1000 &
+                     nCount_RNA < 60000 &
+                     pMT < 20)
+
+```
+
+```{r integration}
+
+# split seurat objects by sample ID
+ovca_list <- SplitObject(ovca_obj, split.by = "sample_id")
+
+# normalize gene expression per sample and perform fast integration using reciprocal PCA (RPCA)
+# for details, see https://satijalab.org/seurat/articles/integration_rpca.html
+
+ovca_list <- lapply(X = ovca_list, FUN = function(x) {
+    x <- NormalizeData(x, verbose = FALSE)
+    x <- FindVariableFeatures(x, verbose = FALSE)
+})
+
+features <- SelectIntegrationFeatures(object.list = ovca_list)
+
+ovca_list <- lapply(X = ovca_list, FUN = function(x) {
+    x <- ScaleData(x, features = features, verbose = FALSE)
+    x <- RunPCA(x, features = features, verbose = FALSE)
+})
+
+anchors <- FindIntegrationAnchors(object.list = ovca_list, reduction = "rpca", dims = 1:50)
+
+rm(ovca_list)
+gc()
+
+ovca_integrated <- IntegrateData(anchorset = anchors, dims = 1:50)
+
+```
+
+```{r cell cycle scoring}
+
+ovca_integrated <- score_cc(ovca_integrated)
+
+```
+
+```{r PCA, clustering, UMAP}
+
+ovca_integrated <- ScaleData(ovca_integrated)
+ovca_integrated <- RunPCA(ovca_integrated)
+ElbowPlot(ovca_integrated, ndims = 50)
+ovca_integrated <- FindNeighbors(ovca_integrated, dims = 1:10)
+ovca_integrated <- FindClusters(ovca_integrated, resolution = c(0.5, 1, 2))
+ovca_integrated <- RunUMAP(ovca_integrated, dims = 1:10)
+
+DimPlot(ovca_integrated, group.by = "sample_id")
+DimPlot(ovca_integrated, group.by = "integrated_snn_res.0.5", label = TRUE)
+DimPlot(ovca_integrated, group.by = "integrated_snn_res.1", label = TRUE)
+DimPlot(ovca_integrated, group.by = "integrated_snn_res.2", label = TRUE)
+
+```
+
+```{r main cell type markers}
+
+mainmarkers <- c("PECAM1", "VWF", "ACTA2", "MYLK", "COL1A1", "PDGFRA", "JCHAIN", "CD79A", "CD3E", "NKG7", "PTPRC", "CD68", "LYZ", "KIT", "EPCAM", "KRT7", "KRT19", "STAR", "PLA2G2A", "UPK3B")
+
+DotPlot(ovca_integrated, features = mainmarkers, group.by = "integrated_snn_res.0.5", assay = "RNA") + 
+  coord_flip()
+
+```
+
+```{r main cell type annotation}
+
+if (dataset == "olbrecht") {
+  annotation_curated_main <- read_excel("curated_annotation/curated_annotation_olbrecht_integrated.xlsx")
+} else if (dataset == "olalekan") {
+  annotation_curated_main <- read_excel("curated_annotation/curated_annotation_olalekan_integrated.xlsx")
+} else {print("Wrong dataset.")}
+
+Idents(ovca_integrated) <- ovca_integrated$integrated_snn_res.0.5
+new_ids_main <- annotation_curated_main$cell_type
+names(new_ids_main) <- levels(ovca_integrated)
+ovca_integrated <- RenameIdents(ovca_integrated, new_ids_main)
+ovca_integrated@meta.data$cell_type <- Idents(ovca_integrated)
+
+DimPlot(ovca_integrated, cols = use_colors)
+
+```
+
+```{r save seurat object}
+
+if (dataset == "olbrecht") {
+  saveRDS(ovca_integrated, "objects/olbrecht_integrated_annotated.RDS")
+} else if (dataset == "olalekan") {
+  saveRDS(ovca_integrated, "objects/olalekan_integrated_annotated.RDS")
+} else {print("Wrong dataset.")}
+
+```
